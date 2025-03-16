@@ -1,0 +1,7 @@
+output/
+outputs/
+debug_model.py
+leptospirosis_model.py
+leptospirosis_model3.py
+__pycache__/
+*.log
