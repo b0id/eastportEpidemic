@@ -12,16 +12,18 @@ logger = logging.getLogger(__name__)
 
 # =============== Model Constants ===============
 INCUBATION_PERIOD = 10
-INFECTIOUS_PERIOD = 14
+TREATED_INFECTIOUS_PERIOD = 14
+UNTREATED_INFECTIOUS_PERIOD = 28  # Longer recovery without antibiotics
 SIGMA = 1 / INCUBATION_PERIOD
-GAMMA = 1 / INFECTIOUS_PERIOD
+GAMMA_TREATED = 1 / TREATED_INFECTIOUS_PERIOD
+GAMMA_UNTREATED = 1 / UNTREATED_INFECTIOUS_PERIOD
 BETA_BASE = 0.4  # Slightly reduced from 0.5
 BETA_FLOOD = 1.0  # Slightly reduced from 1.2
 INTERVENTION_EFFECTS = {
-    10: 0.85,  # 85% reduction for day 10 response
-    20: 0.65,  # 65% reduction for day 20 response
-    30: 0.45,  # 45% reduction for day 30 response
-    40: 0.25   # 25% reduction for day 40 response
+    10: {"transmission": 0.85, "recovery": 0.90},  # 85% transmission reduction, 90% recovery improvement
+    20: {"transmission": 0.65, "recovery": 0.80},  # 65% transmission reduction, 80% recovery improvement
+    30: {"transmission": 0.35, "recovery": 0.45},  # 45% transmission reduction, 65% recovery improvement
+    40: {"transmission": 0.10, "recovery": 0.30}   # 25% transmission reduction, 40% recovery improvement
 }
 CASE_FATALITY_RATES = {"young": 0.02, "adult": 0.04, "senior": 0.07, "elderly": 0.12}
 NEIGHBOR_RADIUS = 150  # meters, adjusted for clearer spread
@@ -69,7 +71,7 @@ class LeptoModel:
             ramp_factor = days_since_response / 7.0
             
             # Get effectiveness based on response day
-            reduction = INTERVENTION_EFFECTS.get(self.response_day, 0.5)
+            reduction = INTERVENTION_EFFECTS.get(self.response_day, {"transmission": 0.5})["transmission"]
             
             # Response effectiveness varies slightly by location
             location_effect = 1.0 - 0.1 * np.sin(x_coord/5000 + y_coord/6000)
@@ -78,7 +80,7 @@ class LeptoModel:
             return beta * (1 - (reduction * ramp_factor * location_effect))
         else:
             return beta
-
+    
     def determine_initial_infected(self, household):
         """Determine if household has initial infections with geographic influence"""
         risk = household['lepto_risk']
@@ -115,11 +117,30 @@ class LeptoModel:
         # Get transmission rate
         beta = self.transmission_rate(t, household, neighbor_factor)
         
+        # Calculate recovery rate based on intervention status
+        if t >= self.response_day:
+            # Gradual implementation of intervention over 7 days
+            days_since_response = min(t - self.response_day, 7)
+            ramp_factor = days_since_response / 7.0
+            
+            # Get effectiveness based on response day
+            recovery_improvement = INTERVENTION_EFFECTS.get(self.response_day, {"recovery": 0.5})["recovery"]
+            
+            # Location-based variation in treatment effectiveness
+            x_coord = household['x_coord']
+            y_coord = household['y_coord']
+            location_effect = 1.0 - 0.1 * np.sin(x_coord/5000 + y_coord/6000)
+            
+            # Calculate recovery rate with ramping up of intervention
+            gamma = GAMMA_UNTREATED + (GAMMA_TREATED - GAMMA_UNTREATED) * recovery_improvement * ramp_factor * location_effect
+        else:
+            gamma = GAMMA_UNTREATED  # Use slower recovery rate before intervention
+        
         # SEIR differential equations
         dSdt = -beta * S * I
         dEdt = beta * S * I - SIGMA * E
-        dIdt = SIGMA * E - GAMMA * I
-        dRdt = GAMMA * I
+        dIdt = SIGMA * E - gamma * I
+        dRdt = gamma * I
         
         return [dSdt, dEdt, dIdt, dRdt]
 
@@ -180,11 +201,11 @@ class LeptoModel:
         # Earlier responses reduce mortality through better treatment
         mortality_modifier = 1.0
         if self.response_day <= 10:
-            mortality_modifier = 0.85  # 15% reduction with earliest response
+            mortality_modifier = 0.70  # 30% reduction with earliest response
         elif self.response_day <= 20:
-            mortality_modifier = 0.90  # 10% reduction
-        elif self.response_day <= 30:
-            mortality_modifier = 0.95  # 5% reduction
+            mortality_modifier = 0.85  # 15% reduction
+        elif self.response_day >= 30:
+            mortality_modifier = 1.15  # 15% increase
         
         df['deaths'] = df['cumulative_cases'] * cfr * mortality_modifier
         
@@ -213,7 +234,7 @@ class LeptoModel:
             daily_totals[key] = sum(df[key] for df in results)
         
         # Log final statistics
-        logger.info(f"Simulation complete. Final cases: {daily_totals['cumulative_cases'].iloc[-1]:.1f}, "
+        logger.info(f"Simulation completed. Final cases: {daily_totals['cumulative_cases'].iloc[-1]:.1f}, "
                    f"Deaths: {daily_totals['deaths'].iloc[-1]:.1f}")
         
         return daily_totals, results
