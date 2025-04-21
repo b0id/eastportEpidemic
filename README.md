@@ -2,7 +2,14 @@
 
 ## Overview
 This project simulates a leptospirosis outbreak in Eastport, Maine following a hurricane event. It implements a spatially-explicit SEIR (Susceptible-Exposed-Infectious-Recovered) model to simulate disease spread through a population and evaluates the impact of different intervention timelines.
+<p float="left">
 
+  <img src="Screenshot 2025-03-16 061750.png" width="200"/>
+  <img src="Screenshot 2025-03-16 021630.png" width="200"/>
+   <img src="Screenshot 2025-03-16 013641.png" width="200"/>
+  <img src="Screenshot 2025-03-16 011436.png" width="200"/>
+  <img src="Screenshot 2025-03-14 235034.png" width="200"/>
+  
 ## Features
 - Geospatial modeling of leptospirosis spread based on property locations
 - Integration with flood risk data to model environmental exposure
